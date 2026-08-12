@@ -1,0 +1,12 @@
+{
+    "display_name": "美化反馈助手",
+    "loading_order": 21,
+    "js": "index.js",
+    "css": "style.css",
+    "author": "酒疫",
+    "version": "0.1.0",
+    "description": "在手机酒馆中截图、标注并按主题与版本归档美化反馈。",
+    "minimum_client_version": "1.14.0",
+    "homePage": "https://github.com/jiuyi777/sillytavern-theme-feedback",
+    "auto_update": false
+}

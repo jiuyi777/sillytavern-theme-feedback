@@ -1,0 +1,192 @@
+#theme-feedback-assistant {
+    --tf-surface: color-mix(in srgb, var(--SmartThemeBlurTintColor) 92%, var(--SmartThemeBodyColor));
+    --tf-soft: color-mix(in srgb, var(--SmartThemeBlurTintColor) 72%, transparent);
+    --tf-line: color-mix(in srgb, var(--SmartThemeBorderColor) 72%, transparent);
+    --tf-accent: color-mix(in srgb, var(--SmartThemeQuoteColor) 72%, var(--SmartThemeEmColor));
+    --tf-danger: #e85767;
+    --tf-success: #70a98b;
+    position: relative;
+    z-index: 40000;
+}
+
+.theme-feedback-capture-hidden {
+    display: none !important;
+}
+
+.theme-feedback-launcher {
+    position: fixed;
+    right: max(0.8rem, env(safe-area-inset-right));
+    bottom: max(5.4rem, calc(env(safe-area-inset-bottom) + 4.2rem));
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 2.8rem;
+    padding: 0.65rem 0.9rem;
+    border: 1px solid var(--tf-line);
+    border-radius: 999px;
+    color: var(--SmartThemeBodyColor);
+    background: var(--tf-accent);
+    box-shadow: 0 8px 24px color-mix(in srgb, var(--SmartThemeShadowColor) 30%, transparent);
+    cursor: pointer;
+}
+
+.theme-feedback-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.42);
+    backdrop-filter: blur(2px);
+}
+
+.theme-feedback-sheet {
+    position: fixed;
+    right: 50%;
+    bottom: 0;
+    width: min(100%, 520px);
+    max-height: min(88dvh, 850px);
+    overflow: auto;
+    transform: translateX(50%);
+    padding: 0.7rem 1rem max(1rem, env(safe-area-inset-bottom));
+    border: 1px solid var(--tf-line);
+    border-bottom: 0;
+    border-radius: 22px 22px 0 0;
+    color: var(--SmartThemeBodyColor);
+    background: var(--tf-surface);
+    box-shadow: 0 -18px 50px color-mix(in srgb, var(--SmartThemeShadowColor) 32%, transparent);
+}
+
+.theme-feedback-handle {
+    width: 3rem;
+    height: 0.28rem;
+    margin: 0 auto 0.7rem;
+    border-radius: 999px;
+    background: var(--tf-line);
+}
+
+.theme-feedback-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.theme-feedback-header small {
+    color: var(--tf-accent);
+    letter-spacing: 0.12em;
+}
+
+.theme-feedback-header h2 {
+    margin: 0.1rem 0 0;
+    font-size: 1.2rem;
+}
+
+#theme-feedback-assistant .theme-feedback-close {
+    width: 2.55rem;
+    min-width: 2.55rem;
+    height: 2.55rem;
+    padding: 0;
+    border-radius: 50%;
+}
+
+.theme-feedback-identity,
+.theme-feedback-status {
+    margin: 0.75rem 0;
+    padding: 0.65rem 0.75rem;
+    border-radius: 12px;
+    background: var(--tf-soft);
+    line-height: 1.4;
+}
+
+.theme-feedback-status[data-state="success"] { color: var(--tf-success); }
+.theme-feedback-status[data-state="error"] { color: var(--tf-danger); }
+
+#theme-feedback-assistant .theme-feedback-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.45rem;
+    width: 100%;
+    min-height: 2.8rem;
+    border-radius: 12px;
+    color: var(--SmartThemeBodyColor);
+    background: var(--tf-accent);
+}
+
+.theme-feedback-editor {
+    margin-top: 0.8rem;
+}
+
+.theme-feedback-canvas-wrap {
+    overflow: hidden;
+    border: 1px solid var(--tf-line);
+    border-radius: 14px;
+    background: var(--tf-soft);
+}
+
+#theme-feedback-canvas {
+    display: block;
+    width: 100%;
+    height: auto;
+    max-height: 48dvh;
+    object-fit: contain;
+    touch-action: none;
+    cursor: crosshair;
+}
+
+.theme-feedback-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.7rem;
+    margin: 0.45rem 0 0.8rem;
+    opacity: 0.84;
+}
+
+#theme-feedback-assistant label {
+    display: block;
+    margin: 0.7rem 0 0.35rem;
+    font-weight: 600;
+}
+
+#theme-feedback-assistant .text_pole {
+    width: 100%;
+    min-width: 0;
+}
+
+#theme-feedback-comment {
+    resize: vertical;
+    min-height: 5rem;
+}
+
+.theme-feedback-open {
+    overflow: hidden;
+}
+
+@media (min-width: 700px) {
+    .theme-feedback-sheet {
+        right: 1rem;
+        bottom: 1rem;
+        transform: none;
+        border-bottom: 1px solid var(--tf-line);
+        border-radius: 22px;
+    }
+}
+
+@media (max-width: 480px) {
+    .theme-feedback-launcher span {
+        display: none;
+    }
+
+    .theme-feedback-launcher {
+        width: 2.9rem;
+        min-width: 2.9rem;
+        padding-inline: 0;
+        justify-content: center;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #theme-feedback-assistant * {
+        scroll-behavior: auto !important;
+        transition: none !important;
+    }
+}

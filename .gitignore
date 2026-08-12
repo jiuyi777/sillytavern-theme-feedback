@@ -1,0 +1,5 @@
+node_modules/
+config.local.json
+theme-feedback-inbox/
+*.log
+.tmp-*/
