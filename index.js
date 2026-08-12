@@ -131,7 +131,7 @@ function identityLabel(identity) {
 }
 
 async function getCaptureLibrary() {
-    captureLibraryPromise ||= import('./vendor/html2canvas.esm.js').then(module => module.default);
+    captureLibraryPromise ||= import('./vendor/html2canvas-pro.esm.js').then(module => module.default);
     return captureLibraryPromise;
 }
 
