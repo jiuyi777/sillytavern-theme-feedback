@@ -1,7 +1,9 @@
 # SillyTavern 美化反馈助手
 
+![美化反馈助手 Logo](assets/theme-feedback-logo.png)
+
 作者：酒疫  
-版本：0.1.0  
+版本：0.1.1
 最低 SillyTavern 版本：1.14.0
 
 这是一个私人使用的 SillyTavern 前端扩展与服务端插件组合。它允许在手机酒馆中截取当前界面、用手指圈出问题、填写反馈，并把截图直接保存到运行酒馆的电脑。

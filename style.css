@@ -30,6 +30,13 @@
     cursor: pointer;
 }
 
+.theme-feedback-launcher img {
+    width: 1.8rem;
+    height: 1.8rem;
+    border-radius: 0.4rem;
+    object-fit: cover;
+}
+
 .theme-feedback-backdrop {
     position: fixed;
     inset: 0;
@@ -67,6 +74,20 @@
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
+}
+
+.theme-feedback-logo {
+    width: 3rem;
+    height: 3rem;
+    flex: 0 0 auto;
+    border: 1px solid color-mix(in srgb, #b99652 65%, transparent);
+    border-radius: 0.55rem;
+    object-fit: cover;
+}
+
+.theme-feedback-heading {
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
 .theme-feedback-header small {
