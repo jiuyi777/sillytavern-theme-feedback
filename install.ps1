@@ -28,6 +28,7 @@ $frontendTarget = Join-Path $stRoot "data\$UserProfileName\extensions\theme-feed
 $serverTarget = Join-Path $stRoot 'plugins\theme-feedback'
 New-Item -ItemType Directory -Path $frontendTarget -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $frontendTarget 'vendor') -Force | Out-Null
+New-Item -ItemType Directory -Path (Join-Path $frontendTarget 'assets') -Force | Out-Null
 New-Item -ItemType Directory -Path $serverTarget -Force | Out-Null
 
 foreach ($file in @('manifest.json', 'index.js', 'style.css', 'README.md')) {
@@ -35,6 +36,7 @@ foreach ($file in @('manifest.json', 'index.js', 'style.css', 'README.md')) {
 }
 Copy-Item -LiteralPath (Join-Path $sourceRoot 'vendor\html2canvas.esm.js') -Destination (Join-Path $frontendTarget 'vendor\html2canvas.esm.js') -Force
 Copy-Item -LiteralPath (Join-Path $sourceRoot 'vendor\html2canvas.LICENSE') -Destination (Join-Path $frontendTarget 'vendor\html2canvas.LICENSE') -Force
+Copy-Item -LiteralPath (Join-Path $sourceRoot 'assets\theme-feedback-logo.png') -Destination (Join-Path $frontendTarget 'assets\theme-feedback-logo.png') -Force
 foreach ($file in @('package.json', 'index.js')) {
     Copy-Item -LiteralPath (Join-Path $serverSource $file) -Destination (Join-Path $serverTarget $file) -Force
 }

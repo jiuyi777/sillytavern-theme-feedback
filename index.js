@@ -1,6 +1,7 @@
 const EXTENSION_KEY = 'theme_feedback_assistant';
 const ROOT_ID = 'theme-feedback-assistant';
 const API_BASE = '/api/plugins/theme-feedback';
+const LOGO_URL = new URL('./assets/theme-feedback-logo.png', import.meta.url).href;
 const MAX_COMMENT_LENGTH = 2000;
 const THEME_KEYS = Object.freeze([
     'blur_strength', 'main_text_color', 'italics_text_color', 'underline_text_color',
@@ -305,13 +306,14 @@ function createUi() {
     root.id = ROOT_ID;
     root.innerHTML = `
         <button id="theme-feedback-launcher" class="theme-feedback-launcher" type="button" aria-expanded="false" aria-controls="theme-feedback-sheet">
-            <i class="fa-solid fa-camera" aria-hidden="true"></i><span>美化反馈</span>
+            <img src="${LOGO_URL}" alt=""><span>美化反馈</span>
         </button>
         <div id="theme-feedback-backdrop" class="theme-feedback-backdrop" hidden></div>
         <section id="theme-feedback-sheet" class="theme-feedback-sheet" role="dialog" aria-modal="true" aria-labelledby="theme-feedback-title" hidden>
             <div class="theme-feedback-handle" aria-hidden="true"></div>
             <header class="theme-feedback-header">
-                <div><small>THEME FEEDBACK</small><h2 id="theme-feedback-title">美化反馈助手</h2></div>
+                <img class="theme-feedback-logo" src="${LOGO_URL}" alt="">
+                <div class="theme-feedback-heading"><small>THEME FEEDBACK</small><h2 id="theme-feedback-title">美化反馈助手</h2></div>
                 <button id="theme-feedback-close" class="menu_button theme-feedback-close" type="button" aria-label="关闭反馈助手"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
             </header>
             <p id="theme-feedback-identity" class="theme-feedback-identity">正在识别当前主题…</p>
