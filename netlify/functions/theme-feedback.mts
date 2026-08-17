@@ -29,6 +29,15 @@ function env(name: string) {
     return Netlify.env.get(name)?.trim() || '';
 }
 
+function relayConfigured() {
+    return Boolean(
+        env('THEME_FEEDBACK_UPLOAD_SECRET').length >= 20
+        && env('THEME_FEEDBACK_GITHUB_TOKEN')
+        && env('THEME_FEEDBACK_GITHUB_OWNER')
+        && env('THEME_FEEDBACK_GITHUB_REPO'),
+    );
+}
+
 function safeEqual(left: string, right: string) {
     const leftBytes = Buffer.from(left);
     const rightBytes = Buffer.from(right);
@@ -176,6 +185,9 @@ export default async (request: Request) => {
         return new Response(null, { status: 204, headers: corsHeaders });
     }
     if (request.method === 'GET') {
+        if (!relayConfigured()) {
+            return json({ ready: false, error: '中转服务尚未完成私人收件箱配置。' }, 503);
+        }
         return json({ ready: true, max_image_bytes: MAX_IMAGE_BYTES });
     }
     if (request.method !== 'POST') {
