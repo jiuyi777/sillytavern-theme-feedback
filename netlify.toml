@@ -1,0 +1,14 @@
+[build]
+  publish = "relay-public"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+[functions]
+  directory = "netlify/functions"
+  node_bundler = "esbuild"
+
+[context.production.environment]
+  THEME_FEEDBACK_GITHUB_OWNER = "jiuyi777"
+  THEME_FEEDBACK_GITHUB_REPO = "sillytavern-theme-feedback-inbox"
+  THEME_FEEDBACK_GITHUB_BRANCH = "main"

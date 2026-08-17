@@ -120,6 +120,32 @@
 .theme-feedback-status[data-state="success"] { color: var(--tf-success); }
 .theme-feedback-status[data-state="error"] { color: var(--tf-danger); }
 
+.theme-feedback-relay-settings {
+    margin: 0.75rem 0;
+    padding: 0.65rem 0.75rem;
+    border: 1px solid var(--tf-line);
+    border-radius: 12px;
+    background: var(--tf-soft);
+}
+
+.theme-feedback-relay-settings summary {
+    cursor: pointer;
+    font-weight: 700;
+}
+
+.theme-feedback-relay-settings[open] summary {
+    margin-bottom: 0.65rem;
+}
+
+#theme-feedback-assistant .theme-feedback-relay-settings .text_pole {
+    margin-bottom: 0.65rem;
+}
+
+#theme-feedback-assistant #theme-feedback-save-relay {
+    width: 100%;
+    min-height: 2.55rem;
+}
+
 #theme-feedback-assistant .theme-feedback-primary {
     display: inline-flex;
     align-items: center;
