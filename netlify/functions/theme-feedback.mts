@@ -1,9 +1,11 @@
+import { getStore } from '@netlify/blobs';
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 
 declare const Netlify: { env: { get(name: string): string | undefined } };
 
 const MAX_REQUEST_BYTES = 5_500_000;
 const MAX_IMAGE_BYTES = 4 * 1024 * 1024;
+const STORE_NAME = 'theme-feedback-pending';
 const ALLOWED_IMAGE_TYPES = new Map([
     ['image/png', '.png'],
     ['image/jpeg', '.jpg'],
@@ -32,9 +34,7 @@ function env(name: string) {
 function relayConfigured() {
     return Boolean(
         env('THEME_FEEDBACK_UPLOAD_SECRET').length >= 20
-        && env('THEME_FEEDBACK_GITHUB_TOKEN')
-        && env('THEME_FEEDBACK_GITHUB_OWNER')
-        && env('THEME_FEEDBACK_GITHUB_REPO'),
+        && env('THEME_FEEDBACK_SYNC_SECRET').length >= 32,
     );
 }
 
@@ -44,25 +44,18 @@ function safeEqual(left: string, right: string) {
     return leftBytes.length === rightBytes.length && timingSafeEqual(leftBytes, rightBytes);
 }
 
-function authorize(request: Request) {
-    const expected = env('THEME_FEEDBACK_UPLOAD_SECRET');
-    const provided = request.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim() || '';
-    return expected.length >= 20 && safeEqual(provided, expected);
+function bearer(request: Request) {
+    return request.headers.get('authorization')?.replace(/^Bearer\s+/i, '').trim() || '';
+}
+
+function authorized(request: Request, secretName: string, minimumLength: number) {
+    const expected = env(secretName);
+    return expected.length >= minimumLength && safeEqual(bearer(request), expected);
 }
 
 function cleanText(value: unknown, fallback: string, maxLength: number) {
     const text = String(value || '').trim().slice(0, maxLength);
     return text || fallback;
-}
-
-function safePathSegment(value: unknown, fallback: string) {
-    const segment = cleanText(value, fallback, 100)
-        .normalize('NFKC')
-        .replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_')
-        .replace(/\.\.+/g, '_')
-        .replace(/[. ]+$/g, '')
-        .trim();
-    return segment || fallback;
 }
 
 function parseImage(dataUrl: unknown) {
@@ -75,7 +68,12 @@ function parseImage(dataUrl: unknown) {
     if (!bytes.length || bytes.length > MAX_IMAGE_BYTES) {
         throw new Error('截图大小必须在 1 字节到 4 MB 之间。');
     }
-    return { base64, bytes: bytes.length, mimeType: match[1], extension: ALLOWED_IMAGE_TYPES.get(match[1])! };
+    return {
+        dataUrl: `data:${match[1]};base64,${base64}`,
+        bytes: bytes.length,
+        mimeType: match[1],
+        extension: ALLOWED_IMAGE_TYPES.get(match[1])!,
+    };
 }
 
 function normalizeMetadata(input: Record<string, unknown>) {
@@ -99,49 +97,19 @@ function normalizeMetadata(input: Record<string, unknown>) {
     };
 }
 
-async function github(path: string, init: RequestInit = {}) {
-    const token = env('THEME_FEEDBACK_GITHUB_TOKEN');
-    if (!token) {
-        throw new Error('中转服务尚未配置 GitHub 写入凭据。');
-    }
-    const response = await fetch(`https://api.github.com${path}`, {
-        ...init,
-        headers: {
-            'Accept': 'application/vnd.github+json',
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json',
-            'User-Agent': 'sillytavern-theme-feedback-relay',
-            'X-GitHub-Api-Version': '2022-11-28',
-            ...init.headers,
-        },
-    });
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) {
-        throw new Error(`GitHub 写入失败：HTTP ${response.status} ${String(result?.message || '')}`.trim());
-    }
-    return result;
+function store() {
+    return getStore({ name: STORE_NAME, consistency: 'strong' });
 }
 
-async function commitFeedback(metadata: ReturnType<typeof normalizeMetadata>, image: ReturnType<typeof parseImage>, feedbackId: string) {
-    const owner = env('THEME_FEEDBACK_GITHUB_OWNER');
-    const repo = env('THEME_FEEDBACK_GITHUB_REPO');
-    const branch = env('THEME_FEEDBACK_GITHUB_BRANCH') || 'main';
-    if (!owner || !repo) {
-        throw new Error('中转服务尚未配置私有反馈仓库。');
-    }
-    const repoPath = `/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
-    const ref = await github(`${repoPath}/git/ref/heads/${encodeURIComponent(branch)}`);
-    const parent = await github(`${repoPath}/git/commits/${ref.object.sha}`);
-    const imageBlob = await github(`${repoPath}/git/blobs`, {
-        method: 'POST',
-        body: JSON.stringify({ content: image.base64, encoding: 'base64' }),
-    });
-    const folder = [
-        'feedback',
-        safePathSegment(metadata.theme_name, '未知主题'),
-        safePathSegment(metadata.version_name, '本地版本'),
-        feedbackId,
-    ].join('/');
+function pendingKey(feedbackId: string) {
+    return `pending/${feedbackId}.json`;
+}
+
+async function queueFeedback(input: Record<string, unknown>) {
+    const metadata = normalizeMetadata(input);
+    const image = parseImage(input.image_data_url);
+    const timestamp = new Date().toISOString().replace(/[-:T]/g, '').replace(/\.\d{3}Z$/, 'Z');
+    const feedbackId = `${timestamp}-${randomBytes(3).toString('hex')}`;
     const record = {
         feedback_id: feedbackId,
         created_at: new Date().toISOString(),
@@ -149,67 +117,78 @@ async function commitFeedback(metadata: ReturnType<typeof normalizeMetadata>, im
         screenshot: `screenshot${image.extension}`,
         image_mime_type: image.mimeType,
         image_bytes: image.bytes,
+        image_data_url: image.dataUrl,
         ...metadata,
     };
-    const metadataBlob = await github(`${repoPath}/git/blobs`, {
-        method: 'POST',
-        body: JSON.stringify({ content: `${JSON.stringify(record, null, 2)}\n`, encoding: 'utf-8' }),
-    });
-    const tree = await github(`${repoPath}/git/trees`, {
-        method: 'POST',
-        body: JSON.stringify({
-            base_tree: parent.tree.sha,
-            tree: [
-                { path: `${folder}/screenshot${image.extension}`, mode: '100644', type: 'blob', sha: imageBlob.sha },
-                { path: `${folder}/feedback.json`, mode: '100644', type: 'blob', sha: metadataBlob.sha },
-            ],
-        }),
-    });
-    const commit = await github(`${repoPath}/git/commits`, {
-        method: 'POST',
-        body: JSON.stringify({
-            message: `feedback: ${metadata.theme_name} / ${metadata.version_name} / ${feedbackId}`,
-            tree: tree.sha,
-            parents: [ref.object.sha],
-        }),
-    });
-    await github(`${repoPath}/git/refs/heads/${encodeURIComponent(branch)}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ sha: commit.sha, force: false }),
-    });
+    await store().setJSON(pendingKey(feedbackId), record);
     return record;
+}
+
+async function pullPending(request: Request) {
+    if (!authorized(request, 'THEME_FEEDBACK_SYNC_SECRET', 32)) {
+        return json({ error: '同步凭据无效。' }, 401);
+    }
+    const after = new URL(request.url).searchParams.get('after') || '';
+    const afterKey = /^\d{14}Z-[a-f0-9]{6}$/.test(after) ? pendingKey(after) : '';
+    const pending = await store().list({ prefix: 'pending/' });
+    const first = pending.blobs
+        .sort((left, right) => left.key.localeCompare(right.key))
+        .find(blob => !afterKey || blob.key > afterKey);
+    if (!first) {
+        return json({ items: [] });
+    }
+    const record = await store().get(first.key, { type: 'json' });
+    return json({ items: record ? [record] : [] });
+}
+
+async function acknowledgePending(request: Request) {
+    if (!authorized(request, 'THEME_FEEDBACK_SYNC_SECRET', 32)) {
+        return json({ error: '同步凭据无效。' }, 401);
+    }
+    const input = await request.json() as { feedback_ids?: unknown };
+    const ids = Array.isArray(input.feedback_ids)
+        ? input.feedback_ids.map(String).filter(id => /^\d{14}Z-[a-f0-9]{6}$/.test(id)).slice(0, 20)
+        : [];
+    for (const id of ids) {
+        await store().delete(pendingKey(id));
+    }
+    return json({ acknowledged: ids });
 }
 
 export default async (request: Request) => {
     if (request.method === 'OPTIONS') {
         return new Response(null, { status: 204, headers: corsHeaders });
     }
-    if (request.method === 'GET') {
-        if (!relayConfigured()) {
-            return json({ ready: false, error: '中转服务尚未完成私人收件箱配置。' }, 503);
-        }
-        return json({ ready: true, max_image_bytes: MAX_IMAGE_BYTES });
-    }
-    if (request.method !== 'POST') {
-        return json({ error: 'Method not allowed.' }, 405);
-    }
-    if (!authorize(request)) {
-        return json({ error: '私人上传码无效。' }, 401);
-    }
-    const contentLength = Number(request.headers.get('content-length') || 0);
-    if (contentLength > MAX_REQUEST_BYTES) {
-        return json({ error: '反馈数据超过 5.5 MB。' }, 413);
-    }
+
+    const mode = new URL(request.url).searchParams.get('mode');
     try {
+        if (request.method === 'GET' && mode === 'pull') {
+            return await pullPending(request);
+        }
+        if (request.method === 'POST' && mode === 'ack') {
+            return await acknowledgePending(request);
+        }
+        if (request.method === 'GET') {
+            if (!relayConfigured()) {
+                return json({ ready: false, error: '中转服务尚未完成私人收件箱配置。' }, 503);
+            }
+            return json({ ready: true, max_image_bytes: MAX_IMAGE_BYTES });
+        }
+        if (request.method !== 'POST') {
+            return json({ error: 'Method not allowed.' }, 405);
+        }
+        if (!authorized(request, 'THEME_FEEDBACK_UPLOAD_SECRET', 20)) {
+            return json({ error: '私人上传码无效。' }, 401);
+        }
+        const contentLength = Number(request.headers.get('content-length') || 0);
+        if (contentLength > MAX_REQUEST_BYTES) {
+            return json({ error: '反馈数据超过 5.5 MB。' }, 413);
+        }
         const input = await request.json() as Record<string, unknown>;
-        const metadata = normalizeMetadata(input);
-        const image = parseImage(input.image_data_url);
-        const timestamp = new Date().toISOString().replace(/[-:T]/g, '').replace(/\.\d{3}Z$/, 'Z');
-        const feedbackId = `${timestamp}-${randomBytes(3).toString('hex')}`;
-        const record = await commitFeedback(metadata, image, feedbackId);
+        const record = await queueFeedback(input);
         return json({ saved: true, feedback_id: record.feedback_id, created_at: record.created_at }, 201);
     } catch (error) {
-        console.error('[theme-feedback-relay] Upload failed:', error);
+        console.error('[theme-feedback-relay] Request failed:', error);
         return json({ error: error instanceof Error ? error.message : String(error) }, 400);
     }
 };

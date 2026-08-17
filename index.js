@@ -1,6 +1,6 @@
 const EXTENSION_KEY = 'theme_feedback_assistant';
 const ROOT_ID = 'theme-feedback-assistant';
-const DEFAULT_RELAY_URL = '';
+const DEFAULT_RELAY_URL = 'https://jiuyi-theme-feedback-relay.netlify.app/api/theme-feedback';
 const LOGO_URL = new URL('./assets/theme-feedback-logo.png', import.meta.url).href;
 const MAX_COMMENT_LENGTH = 2000;
 const MAX_UPLOAD_IMAGE_BYTES = 4 * 1024 * 1024;

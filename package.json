@@ -1,0 +1,9 @@
+{
+  "name": "sillytavern-theme-feedback-relay",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "dependencies": {
+    "@netlify/blobs": "^10.0.10"
+  }
+}

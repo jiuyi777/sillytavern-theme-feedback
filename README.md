@@ -44,7 +44,7 @@ https://github.com/jiuyi777/sillytavern-theme-feedback
 
 1. 打开“美化反馈”。
 2. 展开“私人中转设置”。
-3. 填写部署后的 HTTPS 中转地址。
+3. 确认已自动填写 `https://jiuyi-theme-feedback-relay.netlify.app/api/theme-feedback`。
 4. 填写私人上传码并点击“保存中转设置”。
 
 中转地址和上传码只保存在当前手机酒馆的扩展设置中，不写入公开仓库。
@@ -75,7 +75,8 @@ feedback/
 
 ## 安全边界
 
-- GitHub Token只存在于 Netlify 服务端秘密环境变量中。
+- Netlify 中转不保存任何 GitHub Token；反馈先进入私人 Blobs 暂存区。
+- 私有收件箱使用仓库自带的 GitHub Actions 权限定时拉取，权限只覆盖该仓库。
 - 手机端必须提供至少 20 字符的私人上传码。
 - 中转服务只接受 PNG、JPEG 或 WebP，单图最多 4 MB。
 - 手机端不能指定仓库、分支或任意保存路径。
@@ -86,14 +87,13 @@ feedback/
 
 项目中的 `netlify/functions/theme-feedback.mts` 是 HTTPS 中转函数。生产环境需要配置：
 
-- `THEME_FEEDBACK_GITHUB_TOKEN`：只对私人反馈仓库具有 Contents 读写权限的细粒度 GitHub Token。
 - `THEME_FEEDBACK_UPLOAD_SECRET`：至少 20 字符的私人上传码。
-- `THEME_FEEDBACK_GITHUB_OWNER=jiuyi777`
-- `THEME_FEEDBACK_GITHUB_REPO=sillytavern-theme-feedback-inbox`
-- `THEME_FEEDBACK_GITHUB_BRANCH=main`
+- `THEME_FEEDBACK_SYNC_SECRET`：至少 32 字符，只由私有仓库的 Actions 使用。
+
+私有仓库同时保存同一个 `THEME_FEEDBACK_SYNC_SECRET` 为 Actions Secret，并通过定时工作流把反馈提交到 `feedback/`。
 
 不要把前两个秘密写入 `.env` 后提交，也不要使用公开客户端变量前缀。
 
 ## 当前验证状态
 
-源码可进行静态语法、JSON、路径、秘密泄漏和 GitHub/Netlify 配置检查。手机浏览器截图、跨域上传、Netlify 生产函数写入和真实私有仓库落盘，必须在中转服务完成部署后进行端到端确认。
+2026-08-17 已确认 Netlify 生产接口就绪，模拟手机格式的截图与元数据能够经过私人暂存区，由 GitHub Actions 写入私有收件箱。手机酒馆内的真实截图、手指标注和上传界面仍需安装后由用户实机确认。
