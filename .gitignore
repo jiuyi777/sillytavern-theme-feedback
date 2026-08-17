@@ -1,5 +1,6 @@
 node_modules/
-config.local.json
-theme-feedback-inbox/
+.netlify/
+.env
+.env.*
 *.log
 .tmp-*/

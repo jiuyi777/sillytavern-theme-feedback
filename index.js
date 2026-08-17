@@ -1,8 +1,10 @@
 const EXTENSION_KEY = 'theme_feedback_assistant';
 const ROOT_ID = 'theme-feedback-assistant';
-const API_BASE = '/api/plugins/theme-feedback';
+const DEFAULT_RELAY_URL = 'https://jiuyi-theme-feedback-relay.netlify.app/api/theme-feedback';
 const LOGO_URL = new URL('./assets/theme-feedback-logo.png', import.meta.url).href;
 const MAX_COMMENT_LENGTH = 2000;
+const MAX_UPLOAD_IMAGE_BYTES = 4 * 1024 * 1024;
+const MAX_UPLOAD_EDGE = 2200;
 const THEME_KEYS = Object.freeze([
     'blur_strength', 'main_text_color', 'italics_text_color', 'underline_text_color',
     'quote_text_color', 'blur_tint_color', 'chat_tint_color', 'user_mes_blur_tint_color',
@@ -25,9 +27,51 @@ let currentIdentity = null;
 
 function getSettings() {
     if (!ctx.extensionSettings[EXTENSION_KEY]) {
-        ctx.extensionSettings[EXTENSION_KEY] = { lastScreen: '主聊天' };
+        ctx.extensionSettings[EXTENSION_KEY] = {};
     }
-    return ctx.extensionSettings[EXTENSION_KEY];
+    const settings = ctx.extensionSettings[EXTENSION_KEY];
+    settings.lastScreen ||= '主聊天';
+    settings.relayUrl ??= DEFAULT_RELAY_URL;
+    settings.uploadCode ??= '';
+    return settings;
+}
+
+function normalizeRelayUrl(value) {
+    const url = new URL(String(value || '').trim());
+    if (url.protocol !== 'https:') {
+        throw new Error('中转地址必须使用 HTTPS。');
+    }
+    url.hash = '';
+    return url.href.replace(/\/$/, '');
+}
+
+function getRelayCredentials() {
+    const settings = getSettings();
+    const relayUrl = normalizeRelayUrl(settings.relayUrl);
+    const uploadCode = String(settings.uploadCode || '').trim();
+    if (!uploadCode) {
+        throw new Error('请先填写私人上传码并保存。');
+    }
+    return { relayUrl, uploadCode };
+}
+
+function saveRelaySettings() {
+    const relayUrlInput = document.getElementById('theme-feedback-relay-url');
+    const uploadCodeInput = document.getElementById('theme-feedback-upload-code');
+    try {
+        const relayUrl = normalizeRelayUrl(relayUrlInput.value);
+        const uploadCode = uploadCodeInput.value.trim();
+        if (!uploadCode) {
+            throw new Error('私人上传码不能为空。');
+        }
+        const settings = getSettings();
+        settings.relayUrl = relayUrl;
+        settings.uploadCode = uploadCode;
+        ctx.saveSettingsDebounced?.();
+        setStatus('中转设置已保存在当前手机酒馆中。', 'success');
+    } catch (error) {
+        setStatus(error?.message || String(error), 'error');
+    }
 }
 
 function notify(kind, message, title = '美化反馈助手') {
@@ -230,12 +274,59 @@ function stopDrawing(event) {
     }
 }
 
-async function checkServer() {
-    const response = await fetch(`${API_BASE}/status`, { headers: ctx.getRequestHeaders() });
-    if (!response.ok) {
-        throw new Error(response.status === 404 ? '服务端插件尚未安装或未启用。' : `服务端不可用：HTTP ${response.status}`);
+function canvasToBlob(canvas, type, quality) {
+    return new Promise((resolve, reject) => {
+        canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('无法压缩截图。')), type, quality);
+    });
+}
+
+function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(reader.error || new Error('无法读取压缩截图。'));
+        reader.readAsDataURL(blob);
+    });
+}
+
+async function prepareUploadImage(sourceCanvas) {
+    let scale = Math.min(1, MAX_UPLOAD_EDGE / Math.max(sourceCanvas.width, sourceCanvas.height));
+    let quality = 0.86;
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.max(1, Math.round(sourceCanvas.width * scale));
+        canvas.height = Math.max(1, Math.round(sourceCanvas.height * scale));
+        const context = canvas.getContext('2d', { alpha: false });
+        context.fillStyle = '#ffffff';
+        context.fillRect(0, 0, canvas.width, canvas.height);
+        context.drawImage(sourceCanvas, 0, 0, canvas.width, canvas.height);
+        const blob = await canvasToBlob(canvas, 'image/webp', quality);
+        if (blob.size <= MAX_UPLOAD_IMAGE_BYTES) {
+            return { dataUrl: await blobToDataUrl(blob), size: blob.size };
+        }
+        scale *= 0.82;
+        quality = Math.max(0.58, quality - 0.09);
     }
-    return response.json();
+    throw new Error('截图压缩后仍然过大，请缩短页面后重试。');
+}
+
+async function parseRelayResponse(response) {
+    const text = await response.text();
+    try {
+        return text ? JSON.parse(text) : {};
+    } catch {
+        throw new Error(`中转服务返回了无效响应（HTTP ${response.status}）。`);
+    }
+}
+
+async function checkRelay() {
+    const { relayUrl } = getRelayCredentials();
+    const response = await fetch(relayUrl, { method: 'GET', cache: 'no-store', credentials: 'omit' });
+    const result = await parseRelayResponse(response);
+    if (!response.ok || !result.ready) {
+        throw new Error(result.error || `中转服务不可用：HTTP ${response.status}`);
+    }
+    return result;
 }
 
 async function uploadFeedback() {
@@ -253,14 +344,19 @@ async function uploadFeedback() {
     }
     button.disabled = true;
     button.textContent = '正在上传…';
-    setStatus('正在保存到电脑反馈箱…', 'working');
+    setStatus('正在通过私人中转保存反馈…', 'working');
     try {
-        await checkServer();
+        const { relayUrl, uploadCode } = getRelayCredentials();
         currentIdentity ||= await resolveThemeIdentity();
         const canvas = document.getElementById('theme-feedback-canvas');
-        const response = await fetch(`${API_BASE}/feedback`, {
+        const image = await prepareUploadImage(canvas);
+        const response = await fetch(relayUrl, {
             method: 'POST',
-            headers: ctx.getRequestHeaders(),
+            credentials: 'omit',
+            headers: {
+                'Authorization': `Bearer ${uploadCode}`,
+                'Content-Type': 'application/json',
+            },
             body: JSON.stringify({
                 ...currentIdentity,
                 screen,
@@ -268,15 +364,15 @@ async function uploadFeedback() {
                 platform: navigator.userAgentData?.platform || navigator.platform || 'unknown',
                 sillytavern_version: String(ctx.version || ''),
                 comment: comment.slice(0, MAX_COMMENT_LENGTH),
-                image_data_url: canvas.toDataURL('image/png'),
+                image_data_url: image.dataUrl,
             }),
         });
-        const result = await response.json().catch(() => ({}));
+        const result = await parseRelayResponse(response);
         if (!response.ok) {
             throw new Error(result.error || `上传失败：HTTP ${response.status}`);
         }
-        setStatus(`反馈 ${result.feedback_id} 已保存。`, 'success');
-        notify('success', `反馈 ${result.feedback_id} 已保存到电脑。`);
+        setStatus(`反馈 ${result.feedback_id} 已进入私人收件箱。`, 'success');
+        notify('success', `反馈 ${result.feedback_id} 已保存，电脑端可以读取。`);
         button.textContent = '已上传';
     } catch (error) {
         console.error('[美化反馈助手] 上传失败', error);
@@ -317,6 +413,14 @@ function createUi() {
                 <button id="theme-feedback-close" class="menu_button theme-feedback-close" type="button" aria-label="关闭反馈助手"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
             </header>
             <p id="theme-feedback-identity" class="theme-feedback-identity">正在识别当前主题…</p>
+            <details class="theme-feedback-relay-settings">
+                <summary>私人中转设置</summary>
+                <label for="theme-feedback-relay-url">HTTPS 中转地址</label>
+                <input id="theme-feedback-relay-url" class="text_pole" type="url" inputmode="url" autocomplete="url" placeholder="https://你的中转站.netlify.app/api/theme-feedback">
+                <label for="theme-feedback-upload-code">私人上传码</label>
+                <input id="theme-feedback-upload-code" class="text_pole" type="password" autocomplete="off" placeholder="只保存在当前手机酒馆中">
+                <button id="theme-feedback-save-relay" class="menu_button" type="button">保存中转设置</button>
+            </details>
             <button id="theme-feedback-capture" class="menu_button theme-feedback-primary" type="button"><i class="fa-solid fa-camera" aria-hidden="true"></i>截取当前界面</button>
             <div id="theme-feedback-editor" class="theme-feedback-editor" hidden>
                 <div class="theme-feedback-canvas-wrap"><canvas id="theme-feedback-canvas" aria-label="反馈截图标注画布"></canvas></div>
@@ -325,7 +429,7 @@ function createUi() {
                 <input id="theme-feedback-screen" class="text_pole" type="text" maxlength="100">
                 <label for="theme-feedback-comment">问题说明</label>
                 <textarea id="theme-feedback-comment" class="text_pole" rows="3" maxlength="${MAX_COMMENT_LENGTH}" placeholder="例如：正文太靠左，头像和文字挤在一起。"></textarea>
-                <button id="theme-feedback-upload" class="menu_button theme-feedback-primary" type="button" disabled>上传到电脑反馈箱</button>
+                <button id="theme-feedback-upload" class="menu_button theme-feedback-primary" type="button" disabled>上传私人反馈</button>
             </div>
             <p id="theme-feedback-status" class="theme-feedback-status" aria-live="polite">截图不会自动上传，由你确认后再保存。</p>
         </section>`;
@@ -339,6 +443,7 @@ function createUi() {
     });
     document.getElementById('theme-feedback-close').addEventListener('click', () => setOpen(false));
     document.getElementById('theme-feedback-backdrop').addEventListener('click', () => setOpen(false));
+    document.getElementById('theme-feedback-save-relay').addEventListener('click', saveRelaySettings);
     document.getElementById('theme-feedback-capture').addEventListener('click', captureCurrentView);
     document.getElementById('theme-feedback-clear').addEventListener('click', drawBaseImage);
     document.getElementById('theme-feedback-upload').addEventListener('click', uploadFeedback);
@@ -358,9 +463,15 @@ function initialize() {
     if (document.getElementById(ROOT_ID)) {
         return;
     }
-    getSettings();
+    const settings = getSettings();
     createUi();
-    void checkServer().catch(error => setStatus(error.message, 'error'));
+    document.getElementById('theme-feedback-relay-url').value = settings.relayUrl;
+    document.getElementById('theme-feedback-upload-code').value = settings.uploadCode;
+    if (settings.relayUrl && settings.uploadCode) {
+        void checkRelay().catch(error => setStatus(error.message, 'error'));
+    } else {
+        setStatus('首次使用请展开“私人中转设置”并填写地址和上传码。', 'working');
+    }
 }
 
 if (eventTypes?.APP_READY) {
