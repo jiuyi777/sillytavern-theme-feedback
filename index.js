@@ -5,6 +5,7 @@ const LOGO_URL = new URL('./assets/theme-feedback-logo.png', import.meta.url).hr
 const MAX_COMMENT_LENGTH = 2000;
 const MAX_UPLOAD_IMAGE_BYTES = 4 * 1024 * 1024;
 const MAX_UPLOAD_EDGE = 2200;
+const CAPTURE_SCALE_LIMIT = 1.5;
 const THEME_KEYS = Object.freeze([
     'blur_strength', 'main_text_color', 'italics_text_color', 'underline_text_color',
     'quote_text_color', 'blur_tint_color', 'chat_tint_color', 'user_mes_blur_tint_color',
@@ -24,6 +25,7 @@ let baseScreenshot = null;
 let drawing = false;
 let lastPoint = null;
 let currentIdentity = null;
+let identityPromise = null;
 
 function getSettings() {
     if (!ctx.extensionSettings[EXTENSION_KEY]) {
@@ -179,14 +181,43 @@ async function getCaptureLibrary() {
     return captureLibraryPromise;
 }
 
+function warmCaptureLibrary() {
+    const preload = () => void getCaptureLibrary().catch(error => {
+        captureLibraryPromise = null;
+        console.warn('[美化反馈助手] 截图引擎预载失败，将在截图时重试。', error);
+    });
+    if ('requestIdleCallback' in window) {
+        window.requestIdleCallback(preload, { timeout: 1500 });
+    } else {
+        window.setTimeout(preload, 600);
+    }
+}
+
+function refreshThemeIdentity() {
+    identityPromise ||= resolveThemeIdentity().then(identity => {
+        currentIdentity = identity;
+        const label = document.getElementById('theme-feedback-identity');
+        if (label) {
+            label.textContent = identityLabel(identity);
+        }
+        return identity;
+    }).catch(error => {
+        console.warn('[美化反馈助手] 主题身份后台识别失败。', error);
+        return currentIdentity;
+    }).finally(() => {
+        identityPromise = null;
+    });
+    return identityPromise;
+}
+
 function drawBaseImage() {
     if (!baseScreenshot) {
         return;
     }
     const canvas = document.getElementById('theme-feedback-canvas');
     const context = canvas.getContext('2d');
-    canvas.width = baseScreenshot.naturalWidth;
-    canvas.height = baseScreenshot.naturalHeight;
+    canvas.width = baseScreenshot.naturalWidth || baseScreenshot.width;
+    canvas.height = baseScreenshot.naturalHeight || baseScreenshot.height;
     context.drawImage(baseScreenshot, 0, 0);
 }
 
@@ -196,18 +227,18 @@ async function captureCurrentView() {
     captureButton.disabled = true;
     setStatus('正在截取当前酒馆界面…', 'working');
     try {
-        currentIdentity = await resolveThemeIdentity();
-        document.getElementById('theme-feedback-identity').textContent = identityLabel(currentIdentity);
         document.getElementById('theme-feedback-screen').value = detectScreen();
-        root.classList.add('theme-feedback-capture-hidden');
-        await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
         const html2canvas = await getCaptureLibrary();
+        root.classList.add('theme-feedback-capture-hidden');
+        await new Promise(resolve => requestAnimationFrame(resolve));
         const screenshot = await html2canvas(document.documentElement, {
             backgroundColor: null,
             useCORS: true,
             allowTaint: false,
             logging: false,
-            scale: Math.min(window.devicePixelRatio || 1, 2),
+            imageTimeout: 5000,
+            removeContainer: true,
+            scale: Math.min(window.devicePixelRatio || 1, CAPTURE_SCALE_LIMIT),
             width: window.innerWidth,
             height: window.innerHeight,
             windowWidth: window.innerWidth,
@@ -216,10 +247,7 @@ async function captureCurrentView() {
             scrollY: -window.scrollY,
         });
         root.classList.remove('theme-feedback-capture-hidden');
-        const image = new Image();
-        image.src = screenshot.toDataURL('image/png');
-        await image.decode();
-        baseScreenshot = image;
+        baseScreenshot = screenshot;
         drawBaseImage();
         document.getElementById('theme-feedback-editor').hidden = false;
         document.getElementById('theme-feedback-upload').disabled = false;
@@ -347,7 +375,7 @@ async function uploadFeedback() {
     setStatus('正在通过私人中转保存反馈…', 'working');
     try {
         const { relayUrl, uploadCode } = getRelayCredentials();
-        currentIdentity ||= await resolveThemeIdentity();
+        currentIdentity ||= await refreshThemeIdentity();
         const canvas = document.getElementById('theme-feedback-canvas');
         const image = await prepareUploadImage(canvas);
         const response = await fetch(relayUrl, {
@@ -435,11 +463,18 @@ function createUi() {
         </section>`;
     document.body.append(root);
 
-    document.getElementById('theme-feedback-launcher').addEventListener('click', async () => {
+    const keepCurrentTavernScreenOpen = event => event.stopPropagation();
+    root.addEventListener('touchstart', keepCurrentTavernScreenOpen, { passive: true });
+    root.addEventListener('mousedown', keepCurrentTavernScreenOpen);
+    root.addEventListener('pointerdown', keepCurrentTavernScreenOpen);
+    root.addEventListener('click', keepCurrentTavernScreenOpen);
+
+    document.getElementById('theme-feedback-launcher').addEventListener('click', () => {
+        const currentScreen = detectScreen();
+        currentIdentity = null;
         setOpen(true);
-        currentIdentity = await resolveThemeIdentity();
-        document.getElementById('theme-feedback-identity').textContent = identityLabel(currentIdentity);
-        document.getElementById('theme-feedback-screen').value = detectScreen();
+        document.getElementById('theme-feedback-screen').value = currentScreen;
+        void refreshThemeIdentity();
     });
     document.getElementById('theme-feedback-close').addEventListener('click', () => setOpen(false));
     document.getElementById('theme-feedback-backdrop').addEventListener('click', () => setOpen(false));
@@ -465,6 +500,7 @@ function initialize() {
     }
     const settings = getSettings();
     createUi();
+    warmCaptureLibrary();
     document.getElementById('theme-feedback-relay-url').value = settings.relayUrl;
     document.getElementById('theme-feedback-upload-code').value = settings.uploadCode;
     if (settings.relayUrl && settings.uploadCode) {
