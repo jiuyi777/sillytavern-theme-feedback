@@ -4,7 +4,7 @@
     "js": "index.js",
     "css": "style.css",
     "author": "酒疫",
-    "version": "0.2.0",
+    "version": "0.2.1",
     "description": "在手机酒馆中截图、标注，并通过私人 HTTPS 中转归档到私有反馈仓库。",
     "minimum_client_version": "1.14.0",
     "homePage": "https://github.com/jiuyi777/sillytavern-theme-feedback",
